@@ -16,10 +16,12 @@ package predictor_source
 
 import (
 	"fmt"
+	"net/url"
 	"testing"
 
 	"github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	kserveConstants "github.com/kserve/kserve/pkg/constants"
+	"github.com/kserve/modelmesh-serving/pkg/predictor_source/processor"
 
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -284,6 +286,34 @@ func TestProcessInferenceServiceStorage_AzureUriProcessing(t *testing.T) {
 	assert.Equal(t, "azure", parameters["type"])
 }
 
+func TestProcessInferenceServiceStorage_CustomSchemeProcessing(t *testing.T) {
+	// Mock the custom processor
+	customUriProcessors = map[string]processor.CustomStorageProcessor{
+		"custom-scheme": &MockedCustomProcessor{},
+	}
+
+	uri := "custom-scheme://custom/uri/path"
+
+	nname := types.NamespacedName{Name: "tm-test-model", Namespace: "modelmesh-serving"}
+	inferenceService := &v1beta1.InferenceService{
+		Spec: v1beta1.InferenceServiceSpec{
+			Predictor: v1beta1.PredictorSpec{
+				Model: &v1beta1.ModelSpec{
+					PredictorExtensionSpec: v1beta1.PredictorExtensionSpec{
+						StorageURI: &uri,
+					},
+				},
+			},
+		},
+	}
+
+	_, parameters, modelPath, _, err := processInferenceServiceStorage(inferenceService, nname)
+	assert.NoError(t, err)
+	assert.Equal(t, "some/path/in/the/uri", modelPath)
+	assert.Equal(t, "http", parameters["type"])
+	assert.Equal(t, "http://host", parameters["url"])
+}
+
 func TestProcessInferenceServiceStorage_OverlappingParameters(t *testing.T) {
 	storageBucket := "storage-parameters-bucket"
 	uriBucket := "uri-bucket"
@@ -336,4 +366,24 @@ func TestProcessInferenceServiceStorage_ErrorUriAndPath(t *testing.T) {
 
 func strRef(s string) *string {
 	return &s
+}
+
+var _ processor.CustomStorageProcessor = (*MockedCustomProcessor)(nil)
+
+type MockedCustomProcessor struct {
+}
+
+// ProcessInferenceServiceStorage implements processor.CustomStorageProcessor.
+func (*MockedCustomProcessor) ProcessInferenceServiceStorage(
+	customUri *url.URL,
+	inferenceService *v1beta1.InferenceService,
+	nname types.NamespacedName,
+	processInferenceServiceStorage func(inferenceService *v1beta1.InferenceService, nname types.NamespacedName,
+	) (*string, map[string]string, string, *string, error)) (secretKey *string, parameters map[string]string, modelPath string, schemaPath *string, err error) {
+
+	fetchedUri := "http://host/some/path/in/the/uri"
+	transformedInferenceService := inferenceService.DeepCopy()
+	transformedInferenceService.Spec.Predictor.Model.StorageURI = &fetchedUri
+
+	return processInferenceServiceStorage(transformedInferenceService, nname)
 }

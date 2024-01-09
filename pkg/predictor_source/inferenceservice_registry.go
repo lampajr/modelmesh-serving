@@ -26,6 +26,7 @@ import (
 	"github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	kserveConstants "github.com/kserve/kserve/pkg/constants"
 	"github.com/kserve/modelmesh-serving/apis/serving/v1alpha1"
+	"github.com/kserve/modelmesh-serving/pkg/predictor_source/processor"
 	"knative.dev/pkg/apis"
 
 	k8serr "k8s.io/apimachinery/pkg/api/errors"
@@ -40,6 +41,8 @@ const (
 
 	azureBlobHostSuffix = "blob.core.windows.net"
 )
+
+var customUriProcessors = map[string]processor.CustomStorageProcessor{}
 
 var _ PredictorRegistry = (*InferenceServiceRegistry)(nil)
 
@@ -194,6 +197,11 @@ func processInferenceServiceStorage(inferenceService *v1beta1.InferenceService, 
 				uriParameters["url"] = u.String()
 			}
 		default:
+			uriProcessor, ok := customUriProcessors[u.Scheme]
+			if ok {
+				secretKey, parameters, modelPath, schemaPath, err = uriProcessor.ProcessInferenceServiceStorage(u, inferenceService, nname, processInferenceServiceStorage)
+				return
+			}
 			err = fmt.Errorf("the InferenceService %v has an unsupported storageUri scheme %v", nname, u.Scheme)
 			return
 		}
@@ -425,4 +433,8 @@ func (isvcr InferenceServiceRegistry) UpdateStatus(ctx context.Context, predicto
 
 func (isvcr InferenceServiceRegistry) GetSourceName() string {
 	return "InferenceService"
+}
+
+func init() {
+	customUriProcessors["model-registry"] = processor.NewModelRegistryProcessorFromEnv()
 }
