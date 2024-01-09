@@ -26,6 +26,7 @@ import (
 	"github.com/kserve/kserve/pkg/apis/serving/v1beta1"
 	kserveConstants "github.com/kserve/kserve/pkg/constants"
 	"github.com/kserve/modelmesh-serving/apis/serving/v1alpha1"
+	"github.com/kserve/modelmesh-serving/pkg/modelregistry"
 	"knative.dev/pkg/apis"
 
 	k8serr "k8s.io/apimachinery/pkg/api/errors"
@@ -40,6 +41,8 @@ const (
 
 	azureBlobHostSuffix = "blob.core.windows.net"
 )
+
+var modelRegistryProcessor *modelregistry.ModelRegistryProcessor
 
 var _ PredictorRegistry = (*InferenceServiceRegistry)(nil)
 
@@ -193,6 +196,55 @@ func processInferenceServiceStorage(inferenceService *v1beta1.InferenceService, 
 				uriParameters["type"] = "http"
 				uriParameters["url"] = u.String()
 			}
+		case "model-registry":
+			tokens := strings.SplitN(strings.TrimPrefix(u.Path, "/"), "/", 2)
+
+			if len(tokens) == 0 || len(tokens) > 2 {
+				err = fmt.Errorf("invalid model registry URI, use like model-registry://{registeredModelName}/{versionName}/{artifactId}")
+				return
+			}
+
+			modelName := u.Host
+			var versionName *string
+			var artifactId *string
+			if len(tokens) == 1 {
+				versionName = &tokens[0]
+			}
+			if len(tokens) == 2 {
+				artifactId = &tokens[1]
+			}
+
+			modelArtifact, err1 := modelRegistryProcessor.FindModel(modelName, versionName, artifactId)
+			if err1 != nil {
+				err = fmt.Errorf("unable to find model %v: %w", modelName, err1)
+				return
+			}
+
+			transformedInferenceService := inferenceService.DeepCopy()
+			transformedInferenceService.Spec.Predictor.Model.StorageURI = modelArtifact.Uri
+
+			// if modelArtifact.StorageKey != nil && modelArtifact.StoragePath != nil {
+			// 	transformedInferenceService.Spec.Predictor.Model.Storage.StorageKey = modelArtifact.StorageKey
+			// 	transformedInferenceService.Spec.Predictor.Model.Storage.Path = modelArtifact.StoragePath
+			// } else if modelArtifact.Uri != nil {
+			// 	transformedInferenceService.Spec.Predictor.Model.StorageURI = modelArtifact.Uri
+			// } else {
+			// 	err = fmt.Errorf("invalid model artifact, either storageUri or storageKey with storagePath must be defined")
+			// 	return
+			// }
+
+			// if modelArtifact.ModelFormatName != nil {
+			// 	transformedInferenceService.Spec.Predictor.Model.ModelFormat.Name = *modelArtifact.ModelFormatName
+			// }
+
+			// if modelArtifact.ModelFormatVersion != nil {
+			// 	transformedInferenceService.Spec.Predictor.Model.ModelFormat.Name = *modelArtifact.ModelFormatVersion
+			// }
+
+			// recursively call the same method with the transformed InferenceService and return
+			secretKey, parameters, modelPath, schemaPath, err = processInferenceServiceStorage(transformedInferenceService, nname)
+			return
+
 		default:
 			err = fmt.Errorf("the InferenceService %v has an unsupported storageUri scheme %v", nname, u.Scheme)
 			return
@@ -425,4 +477,8 @@ func (isvcr InferenceServiceRegistry) UpdateStatus(ctx context.Context, predicto
 
 func (isvcr InferenceServiceRegistry) GetSourceName() string {
 	return "InferenceService"
+}
+
+func init() {
+	modelRegistryProcessor = modelregistry.NewModelRegistryProcessorFromEnv()
 }

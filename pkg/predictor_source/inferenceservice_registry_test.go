@@ -284,6 +284,32 @@ func TestProcessInferenceServiceStorage_AzureUriProcessing(t *testing.T) {
 	assert.Equal(t, "azure", parameters["type"])
 }
 
+// func TestProcessInferenceServiceStorage_ModelRegistryProcessing(t *testing.T) {
+// 	// TODO(user): implement
+// 	uriBucket := "uri-bucket"
+// 	uriPath := "some/path/in/the/uri"
+// 	uri := "s3://" + uriBucket + "/" + uriPath
+
+// 	nname := types.NamespacedName{Name: "tm-test-model", Namespace: "modelmesh-serving"}
+// 	inferenceService := &v1beta1.InferenceService{
+// 		Spec: v1beta1.InferenceServiceSpec{
+// 			Predictor: v1beta1.PredictorSpec{
+// 				SKLearn: &v1beta1.SKLearnSpec{
+// 					PredictorExtensionSpec: v1beta1.PredictorExtensionSpec{
+// 						StorageURI: &uri,
+// 					},
+// 				},
+// 			},
+// 		},
+// 	}
+
+// 	_, parameters, modelPath, _, err := processInferenceServiceStorage(inferenceService, nname)
+// 	assert.NoError(t, err)
+// 	assert.Equal(t, uriPath, modelPath)
+// 	assert.Equal(t, uriBucket, parameters["bucket"])
+// 	assert.Equal(t, "s3", parameters["type"])
+// }
+
 func TestProcessInferenceServiceStorage_OverlappingParameters(t *testing.T) {
 	storageBucket := "storage-parameters-bucket"
 	uriBucket := "uri-bucket"
